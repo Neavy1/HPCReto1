@@ -1,89 +1,88 @@
-#include <stdlib.h>
-#include <time.h>
 #include <stdio.h>
-#include <math.h>
-#include <stdbool.h>
+#include <stdlib.h>
 #include <pthread.h>
+#include <time.h>
+#include <math.h>
 
-using namespace std;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
-// Estructura para pasar datos a la función del hilo
-struct ThreadData {
-    int numTrials;
-    double L;
-    double d;
-    int hits;
-};
+// Estructura para pasar argumentos a cada hilo
+typedef struct {
+    long long lanzamientos_por_hilo;
+    unsigned int semilla;
+    long long cruces_locales;
+} ThreadData;
 
-// Función que realiza los lanzamientos en un hilo
-void* lanzarAgujas(void* arg) {
-    ThreadData* data = static_cast<ThreadData*>(arg);
-    
-    for (int i = 0; i < data->numTrials; ++i) {
-        double angle = (rand() / (double)RAND_MAX) * 3.14159265359;
-        double x = ((rand() / (double)RAND_MAX) * data->d) / 2;
+// Función que será ejecutada por cada hilo
+void* simular_lanzamientos(void* arg) {
+    ThreadData* data = (ThreadData*)arg;
+    data->cruces_locales = 0;
 
-        if (x <= (data->L / 2) * sin(angle)) {
-            data->hits++;
+    const double L = 1.0;
+    const double T = 1.0;
+
+    for (long long i = 0; i < data->lanzamientos_por_hilo; ++i) {
+        // Usar rand_r para generación de números aleatorios segura para hilos
+        double x = ((double)rand_r(&data->semilla) / RAND_MAX) * (T / 2.0);
+        double theta = ((double)rand_r(&data->semilla) / RAND_MAX) * M_PI;
+
+        if (x <= (L / 2.0) * sin(theta)) {
+            data->cruces_locales++;
         }
     }
 
     pthread_exit(NULL);
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        printf("Uso: %s <numTrials> <numThreads>\n", argv[0]);
+int main(int argc, char *argv) {
+    if (argc!= 3) {
+        fprintf(stderr, "Uso: %s <numero_de_lanzamientos> <numero_de_hilos>\n", argv);
         return 1;
     }
 
-    int numTrials = atoi(argv[1]);   // Número de lanzamientos
-    int numThreads = atoi(argv[2]);
+    long long total_lanzamientos = atoll(argv);
+    int num_hilos = atoi(argv);
 
-    if (numTrials <= 0 || numThreads<= 0) {
-        printf("El valor de numTrials y numThreads debe ser mayor que cero.\n");
+    if (total_lanzamientos <= 0 || num_hilos <= 0) {
+        fprintf(stderr, "Los lanzamientos y los hilos deben ser enteros positivos.\n");
         return 1;
     }
-    const double L = 1.0;
-    const double d = 2.0;
 
-    srand(time(nullptr));
-    int totalHits = 0;
-    pthread_t threads[numThreads];
-    ThreadData threadData[numThreads];
+    pthread_t hilos[num_hilos];
+    ThreadData datos_hilos[num_hilos];
+    long long lanzamientos_por_hilo = total_lanzamientos / num_hilos;
 
-    clock_t start_time,end_time;
-    double cpu_time_used;
-
-    start_time = clock();
-
-    for (int i = 0; i < numThreads; ++i) {
-        threadData[i].numTrials = numTrials / numThreads;
-        threadData[i].L = L;
-        threadData[i].d = d;
-        threadData[i].hits = 0;
-        int result = pthread_create(&threads[i], NULL, lanzarAgujas, &threadData[i]);
-
-        if (result) {
-            cerr << "Error al crear el hilo: " << result << endl;
+    // Crear y lanzar los hilos
+    for (int i = 0; i < num_hilos; ++i) {
+        datos_hilos[i].lanzamientos_por_hilo = (i == 0)? lanzamientos_por_hilo + (total_lanzamientos % num_hilos) : lanzamientos_por_hilo;
+        datos_hilos[i].semilla = time(NULL) ^ (i + 1); // Semilla única para cada hilo
+        
+        int rc = pthread_create(&hilos[i], NULL, simular_lanzamientos, &datos_hilos[i]);
+        if (rc) {
+            fprintf(stderr, "ERROR; pthread_create() devolvió el código %d\n", rc);
             exit(-1);
         }
     }
 
-    for (int i = 0; i < numThreads; ++i) {
-        pthread_join(threads[i], NULL);
-        totalHits += threadData[i].hits;
+    long long cruces_totales = 0;
+    // Esperar a que los hilos terminen y agregar sus resultados
+    for (int i = 0; i < num_hilos; ++i) {
+        pthread_join(hilos[i], NULL);
+        cruces_totales += datos_hilos[i].cruces_locales;
     }
 
-    if (totalHits > 0) {
-        double estimatedPi = (2 * L * numTrials) / (d * totalHits);
-        printf("Valor estimado de PI: %f \n", estimatedPi);
+    // Calcular la estimación de PI
+    if (cruces_totales > 0) {
+        double pi_estimado = (2.0 * 1.0 * total_lanzamientos) / (1.0 * cruces_totales);
+        printf("Lanzamientos totales: %lld\n", total_lanzamientos);
+        printf("Hilos: %d\n", num_hilos);
+        printf("Cruces totales: %lld\n", cruces_totales);
+        printf("Estimación de PI: %.12f\n", pi_estimado);
     } else {
-        printf("No se cruzaron líneas, no se puede calcular PI.");
+        printf("No se registraron cruces.\n");
     }
 
-    end_time = clock();
-    cpu_time_used = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
-    printf("%f Segundos.",cpu_time_used);
-    pthread_exit(NULL);
+    return 0;
 }

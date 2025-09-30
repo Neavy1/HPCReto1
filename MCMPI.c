@@ -1,83 +1,101 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <time.h>
 #include <math.h>
-#include <stdbool.h>
-#include <mpi.h>
 
-int main(int argc, char *argv[]) {
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
-    MPI_Init(&argc, &argv);
+void simular_en_hijo(long long lanzamientos, int pipe_fd) {
+    // Resembrar el PRNG en el proceso hijo con una semilla única
+    srand(time(NULL) ^ getpid());
 
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    long long cruces_locales = 0;
+    const double L = 1.0;
+    const double T = 1.0;
 
-    if (argc != 2) {
-        if (rank == 0) {
-            printf("Uso: %s <numTrials>\n", argv[0]);
+    for (long long i = 0; i < lanzamientos; ++i) {
+        double x = ((double)rand() / RAND_MAX) * (T / 2.0);
+        double theta = ((double)rand() / RAND_MAX) * M_PI;
+
+        if (x <= (L / 2.0) * sin(theta)) {
+            cruces_locales++;
         }
-        MPI_Finalize();
+    }
+
+    // Escribir el resultado en la tubería
+    write(pipe_fd, &cruces_locales, sizeof(cruces_locales));
+    close(pipe_fd); // Cerrar el extremo de escritura
+    exit(0); // Terminar el proceso hijo
+}
+
+int main(int argc, char *argv) {
+    if (argc!= 3) {
+        fprintf(stderr, "Uso: %s <numero_de_lanzamientos> <numero_de_procesos>\n", argv);
         return 1;
     }
 
-    int numTrials = atoi(argv[1]);   // Número de lanzamientos
+    long long total_lanzamientos = atoll(argv);
+    int num_procesos = atoi(argv);
 
-    if (numTrials <= 0) {
-        if (rank == 0) {
-            printf("El valor de numTrials debe ser mayor que cero.\n");
-        }
-        MPI_Finalize();
+    if (total_lanzamientos <= 0 |
+
+| num_procesos <= 0) {
+        fprintf(stderr, "Los lanzamientos y los procesos deben ser enteros positivos.\n");
         return 1;
     }
 
-    // Configuración del experimento
-    double L = 1.0;  // Longitud de la aguja
-    double d = 2.0;  // Espacio entre las líneas
+    int pipes[num_procesos];
+    pid_t pids[num_procesos];
+    long long lanzamientos_por_proceso = total_lanzamientos / num_procesos;
 
-    // Inicialización del generador de números aleatorios
-    srand(rank);
+    for (int i = 0; i < num_procesos; ++i) {
+        if (pipe(pipes[i]) == -1) {
+            perror("pipe");
+            exit(EXIT_FAILURE);
+        }
 
-    int localHits = 0;  // Contador de cruces de línea
+        pids[i] = fork();
 
-    double start_time, end_time;
-    start_time = MPI_Wtime();
+        if (pids[i] < 0) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        }
 
-    // Realizar el experimento local
-    for (int i = 0; i < numTrials; ++i) {
-        double angle = ((double)rand() / RAND_MAX) * 3.14159265359;  // Ángulo aleatorio en radianes
-        double x = (((double)rand() / RAND_MAX) * d) / 2;  // Posición aleatoria en el eje X
-
-        // Comprobar si la aguja cruza una línea
-        if (x <= (L / 2) * sin(angle)) {
-            localHits++;
+        if (pids[i] == 0) { // Proceso hijo
+            close(pipes[i]); // El hijo no leerá de la tubería
+            long long mis_lanzamientos = (i == 0)? lanzamientos_por_proceso + (total_lanzamientos % num_procesos) : lanzamientos_por_proceso;
+            simular_en_hijo(mis_lanzamientos, pipes[i]);
         }
     }
 
-    // Sumar los resultados locales usando MPI_Reduce
-    int globalHits;
-    MPI_Reduce(&localHits, &globalHits, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-
-    end_time = MPI_Wtime();
-
-    // Imprimir el tiempo solo en el proceso con rango 0
-    if (rank == 0) {
-        // Calcular π basado en los resultados del experimento
-        if (globalHits > 0) {
-            double estimatedPi = (2 * L * numTrials * size) / (d * globalHits);
-            printf("Valor estimado de PI: %f \n", estimatedPi);
-
-            // Guardar el tiempo en un archivo
-            FILE *fp;
-            fp = fopen("tiempos.txt", "a");
-            fprintf(fp, "Tiempo en segundos para %d procesos: %f\n", size, end_time - start_time);
-            fclose(fp);
-        } else {
-            printf("No se cruzaron líneas, no se puede calcular PI.");
-        }
-
-        printf("%f Segundos.\n", end_time - start_time);
+    // Proceso padre
+    long long cruces_totales = 0;
+    for (int i = 0; i < num_procesos; ++i) {
+        close(pipes[i]); // El padre no escribirá en la tubería
+        long long cruces_hijo;
+        read(pipes[i], &cruces_hijo, sizeof(cruces_hijo));
+        cruces_totales += cruces_hijo;
+        close(pipes[i]);
     }
 
-    MPI_Finalize();
+    // Esperar a que todos los hijos terminen
+    for (int i = 0; i < num_procesos; ++i) {
+        waitpid(pids[i], NULL, 0);
+    }
+
+    if (cruces_totales > 0) {
+        double pi_estimado = (2.0 * 1.0 * total_lanzamientos) / (1.0 * cruces_totales);
+        printf("Lanzamientos totales: %lld\n", total_lanzamientos);
+        printf("Procesos: %d\n", num_procesos);
+        printf("Cruces totales: %lld\n", cruces_totales);
+        printf("Estimación de PI: %.12f\n", pi_estimado);
+    } else {
+        printf("No se registraron cruces.\n");
+    }
+
     return 0;
 }
