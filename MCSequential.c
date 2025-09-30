@@ -3,7 +3,6 @@
 #include <time.h>
 #include <math.h>
 
-// Definir M_PI si no está disponible (estándar en math.h con extensiones GNU)
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -30,11 +29,9 @@ int main(int argc, char *argv) {
 
     for (long long i = 0; i < total_lanzamientos; ++i) {
         // Generar una distancia aleatoria del centro de la aguja a la línea más cercana
-        // x está uniformemente distribuido en
         double x = ((double)rand() / RAND_MAX) * (T / 2.0);
 
         // Generar un ángulo aleatorio de la aguja
-        // theta está uniformemente distribuido en [0, PI]
         double theta = ((double)rand() / RAND_MAX) * M_PI;
 
         // Comprobar la condición de cruce
@@ -44,7 +41,6 @@ int main(int argc, char *argv) {
     }
 
     // Calcular la estimación de PI
-    // Evitar división por cero si no hay cruces
     if (cruces > 0) {
         double pi_estimado = (2.0 * L * total_lanzamientos) / (T * cruces);
         printf("Lanzamientos totales: %lld\n", total_lanzamientos);

@@ -26,10 +26,9 @@ void simular_en_hijo(long long lanzamientos, int pipe_fd) {
         }
     }
 
-    // Escribir el resultado en la tubería
     write(pipe_fd, &cruces_locales, sizeof(cruces_locales));
-    close(pipe_fd); // Cerrar el extremo de escritura
-    exit(0); // Terminar el proceso hijo
+    close(pipe_fd); 
+    exit(0);
 }
 
 int main(int argc, char *argv) {
@@ -65,8 +64,8 @@ int main(int argc, char *argv) {
             exit(EXIT_FAILURE);
         }
 
-        if (pids[i] == 0) { // Proceso hijo
-            close(pipes[i]); // El hijo no leerá de la tubería
+        if (pids[i] == 0) { 
+            close(pipes[i]); 
             long long mis_lanzamientos = (i == 0)? lanzamientos_por_proceso + (total_lanzamientos % num_procesos) : lanzamientos_por_proceso;
             simular_en_hijo(mis_lanzamientos, pipes[i]);
         }
@@ -75,7 +74,7 @@ int main(int argc, char *argv) {
     // Proceso padre
     long long cruces_totales = 0;
     for (int i = 0; i < num_procesos; ++i) {
-        close(pipes[i]); // El padre no escribirá en la tubería
+        close(pipes[i]);
         long long cruces_hijo;
         read(pipes[i], &cruces_hijo, sizeof(cruces_hijo));
         cruces_totales += cruces_hijo;

@@ -57,7 +57,7 @@ int main(int argc, char *argv) {
     // Crear y lanzar los hilos
     for (int i = 0; i < num_hilos; ++i) {
         datos_hilos[i].lanzamientos_por_hilo = (i == 0)? lanzamientos_por_hilo + (total_lanzamientos % num_hilos) : lanzamientos_por_hilo;
-        datos_hilos[i].semilla = time(NULL) ^ (i + 1); // Semilla única para cada hilo
+        datos_hilos[i].semilla = time(NULL) ^ (i + 1);
         
         int rc = pthread_create(&hilos[i], NULL, simular_lanzamientos, &datos_hilos[i]);
         if (rc) {
